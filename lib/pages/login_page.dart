@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -8,6 +9,51 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
+  final AuthService _authService = AuthService();
+  bool _isLoggingIn = false;
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    final email = emailController.text.trim();
+    final password = passwordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Please enter email and password")),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoggingIn = true;
+    });
+
+    try {
+      await _authService.signInWithEmailPassword(
+        email: email,
+        password: password,
+      );
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/home');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Login failed: $e")),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoggingIn = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +80,8 @@ class _LoginPageState extends State<LoginPage> {
                       color: Colors.white.withOpacity(0.3),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(Icons.flight_takeoff, size: 60, color: Colors.teal.shade700),
+                    child: Icon(Icons.flight_takeoff,
+                        size: 60, color: Colors.teal.shade700),
                   ),
                   SizedBox(height: 24),
                   Text(
@@ -99,16 +146,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         SizedBox(height: 32),
                         ElevatedButton(
-                          onPressed: () {
-                            if (emailController.text.isNotEmpty &&
-                                passwordController.text.isNotEmpty) {
-                              Navigator.pushReplacementNamed(context, '/home');
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("Please enter email and password")),
-                              );
-                            }
-                          },
+                          onPressed: _isLoggingIn ? null : _login,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.teal.shade600,
                             padding: EdgeInsets.symmetric(vertical: 16),
@@ -116,14 +154,29 @@ class _LoginPageState extends State<LoginPage> {
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          child: Text("Login", style: TextStyle(fontSize: 18)),
+                          child: _isLoggingIn
+                              ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : Text(
+                                  "Login",
+                                  style: TextStyle(fontSize: 18),
+                                ),
                         ),
                         SizedBox(height: 16),
                         TextButton(
                           onPressed: () {
                             Navigator.pushReplacementNamed(context, '/home');
                           },
-                          child: Text("Continue as Guest", style: TextStyle(color: Colors.teal.shade700)),
+                          child: Text("Continue as Guest",
+                              style: TextStyle(color: Colors.teal.shade700)),
                         ),
                       ],
                     ),

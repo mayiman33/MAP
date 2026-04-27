@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthService {
@@ -74,6 +76,116 @@ class AuthService {
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     await _auth.signOut();
+  }
+
+  Future<void> createDemoUsers() async {
+    if (!kDebugMode) {
+      throw StateError('Demo users can only be created in debug mode.');
+    }
+
+    const demoUsers = [
+      (
+        email: 'admin@test.com',
+        password: '123456',
+        role: 'admin',
+      ),
+      (
+        email: 'user@test.com',
+        password: '123456',
+        role: 'user',
+      ),
+    ];
+
+    const demoAppName = 'demo-user-seeder';
+    FirebaseApp demoApp;
+
+    try {
+      demoApp = Firebase.app(demoAppName);
+    } on FirebaseException {
+      demoApp = await Firebase.initializeApp(
+        name: demoAppName,
+        options: Firebase.app().options,
+      );
+    }
+
+    final demoAuth = FirebaseAuth.instanceFor(app: demoApp);
+    final demoFirestore = FirebaseFirestore.instanceFor(app: demoApp);
+    var failureCount = 0;
+
+    try {
+      for (final demoUser in demoUsers) {
+        try {
+          UserCredential credential;
+
+          try {
+            credential = await demoAuth.createUserWithEmailAndPassword(
+              email: demoUser.email,
+              password: demoUser.password,
+            );
+            debugPrint('Created demo auth user: ${demoUser.email}');
+          } on FirebaseAuthException catch (e) {
+            if (e.code != 'email-already-in-use') {
+              rethrow;
+            }
+
+            credential = await demoAuth.signInWithEmailAndPassword(
+              email: demoUser.email,
+              password: demoUser.password,
+            );
+            debugPrint('Demo auth user already exists: ${demoUser.email}');
+          }
+
+          final user = credential.user;
+          if (user == null) {
+            throw StateError('FirebaseAuth did not return a user.');
+          }
+
+          await _ensureDemoUserProfile(
+            firestore: demoFirestore,
+            uid: user.uid,
+            email: user.email ?? demoUser.email,
+            role: demoUser.role,
+          );
+          debugPrint(
+            'Demo Firestore user ready: ${demoUser.email} (${demoUser.role})',
+          );
+        } catch (e) {
+          failureCount++;
+          debugPrint('Failed to create demo user ${demoUser.email}: $e');
+        }
+      }
+
+      if (failureCount > 0) {
+        throw StateError(
+          '$failureCount demo user(s) failed. Check debug logs for details.',
+        );
+      }
+    } finally {
+      await demoAuth.signOut();
+      await demoApp.delete();
+    }
+  }
+
+  Future<void> _ensureDemoUserProfile({
+    required FirebaseFirestore firestore,
+    required String uid,
+    required String email,
+    required String role,
+  }) async {
+    final userRef = firestore.collection('users').doc(uid);
+    final snapshot = await userRef.get();
+    final data = snapshot.data();
+
+    await userRef.set(
+      {
+        'uid': uid,
+        'email': email,
+        'role': role,
+        if (!snapshot.exists || data?['createdAt'] == null)
+          'createdAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
   }
 
   Future<void> _ensureUserProfile({

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/attraction.dart';
+import '../services/auth_service.dart';
 import '../services/firebase_place_service.dart';
 
 class HomePage extends StatefulWidget {
@@ -12,6 +13,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final TextEditingController searchController = TextEditingController();
+  final AuthService _authService = AuthService();
   final FirebasePlaceService _placeService = FirebasePlaceService();
   String selectedCategory = "All";
   Attraction? selectedAttraction;
@@ -19,6 +21,7 @@ class _HomePageState extends State<HomePage> {
   List<Attraction> filteredAttractions = [];
   bool _isLoading = true;
   bool _isSeeding = false;
+  bool _isCreatingDemoUsers = false;
   String? _friendlyError;
   String? _fallbackMessage;
   String _dataSourceLabel = 'Local fallback';
@@ -115,6 +118,30 @@ class _HomePageState extends State<HomePage> {
       if (mounted) {
         setState(() {
           _isSeeding = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _createDemoUsers() async {
+    setState(() {
+      _isCreatingDemoUsers = true;
+    });
+    try {
+      await _authService.createDemoUsers();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Demo users are ready')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Demo user creation failed: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCreatingDemoUsers = false;
         });
       }
     }
@@ -269,26 +296,61 @@ class _HomePageState extends State<HomePage> {
             Positioned(
               top: 200,
               right: 16,
-              child: ElevatedButton.icon(
-                onPressed: _isSeeding ? null : _seedFirestore,
-                icon: _isSeeding
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Icon(Icons.cloud_upload, size: 16),
-                label: Text(_isSeeding ? 'Seeding...' : 'Seed'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal.shade700,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _isSeeding ? null : _seedFirestore,
+                    icon: _isSeeding
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Icon(Icons.cloud_upload, size: 16),
+                    label: Text(_isSeeding ? 'Seeding...' : 'Seed'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: _isCreatingDemoUsers ? null : _createDemoUsers,
+                    icon: _isCreatingDemoUsers
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Icon(Icons.person_add_alt_1, size: 16),
+                    label: Text(
+                      _isCreatingDemoUsers
+                          ? 'Creating...'
+                          : 'Create Demo Users',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           if (kDebugMode && _friendlyError == null && !_isLoading)
