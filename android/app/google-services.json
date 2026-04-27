@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1044479013616",
+    "project_id": "malaysia-travel-351de",
+    "storage_bucket": "malaysia-travel-351de.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1044479013616:android:9a89cd75118060437b8835",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEmvbyfyZnujPyZ1Em-womG21waaK7ww0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
