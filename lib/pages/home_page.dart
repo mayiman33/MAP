@@ -18,8 +18,10 @@ class _HomePageState extends State<HomePage> {
   List<Attraction> _allAttractions = [];
   List<Attraction> filteredAttractions = [];
   bool _isLoading = true;
+  bool _isSeeding = false;
   String? _friendlyError;
   String? _fallbackMessage;
+  String _dataSourceLabel = 'Local fallback';
 
   @override
   void initState() {
@@ -46,6 +48,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _allAttractions = result.attractions;
         _fallbackMessage = result.fromFallback ? result.error : null;
+        _dataSourceLabel = result.fromFallback ? 'Local fallback' : 'Firestore';
         _isLoading = false;
       });
       _filterAttractions();
@@ -67,8 +70,8 @@ class _HomePageState extends State<HomePage> {
       String query = searchController.text.toLowerCase();
       filteredAttractions = _allAttractions.where((attraction) {
         bool matchesSearch = attraction.name.toLowerCase().contains(query);
-        bool matchesCategory =
-            selectedCategory == "All" || attraction.category == selectedCategory;
+        bool matchesCategory = selectedCategory == "All" ||
+            attraction.category == selectedCategory;
         return matchesSearch && matchesCategory;
       }).toList();
 
@@ -93,11 +96,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _seedFirestore() async {
+    setState(() {
+      _isSeeding = true;
+    });
     try {
-      await _placeService.seedSamplePlaces();
+      final seededCount = await _placeService.seedSamplePlaces();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sample places seeded to Firestore.')),
+        SnackBar(content: Text('$seededCount places seeded successfully')),
       );
       await _loadAttractions();
     } catch (e) {
@@ -105,6 +111,12 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Seed failed: $e')),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSeeding = false;
+        });
+      }
     }
   }
 
@@ -127,45 +139,31 @@ class _HomePageState extends State<HomePage> {
             ),
             children: [
               TileLayer(
-                urlTemplate: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                urlTemplate:
+                    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
                 subdomains: ['a', 'b', 'c'],
                 userAgentPackageName: 'com.example.malaysia_travel',
               ),
               MarkerLayer(
                 markers: filteredAttractions.map((attraction) {
+                  final isSelected = selectedAttraction?.id == attraction.id;
+
                   return Marker(
-                    width: 50,
-                    height: 50,
+                    width: isSelected ? 62 : 54,
+                    height: isSelected ? 62 : 54,
                     point: attraction.coordinates,
                     alignment: Alignment.center,
                     child: GestureDetector(
                       onTap: () => _onMarkerTap(attraction),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black26,
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: CircleAvatar(
-                          radius: 20,
-                          backgroundColor: Colors.teal.shade600,
-                          child: Text(attraction.iconEmoji, style: TextStyle(fontSize: 22)),
-                        ),
-                      ),
+                      child:
+                          _buildMapMarker(attraction, isSelected: isSelected),
                     ),
                   );
                 }).toList(),
               ),
             ],
           ),
-          if (_isLoading)
-            const Center(child: CircularProgressIndicator()),
+          if (_isLoading) const Center(child: CircularProgressIndicator()),
           // 搜索栏
           Positioned(
             top: 50,
@@ -176,7 +174,10 @@ class _HomePageState extends State<HomePage> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(30),
                 boxShadow: [
-                  BoxShadow(color: Colors.grey.withOpacity(0.3), blurRadius: 8, offset: Offset(0, 3)),
+                  BoxShadow(
+                      color: Colors.grey.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: Offset(0, 3)),
                 ],
               ),
               child: TextField(
@@ -221,7 +222,8 @@ class _HomePageState extends State<HomePage> {
               left: 16,
               right: 16,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.amber.shade100,
                   borderRadius: BorderRadius.circular(12),
@@ -268,13 +270,41 @@ class _HomePageState extends State<HomePage> {
               top: 200,
               right: 16,
               child: ElevatedButton.icon(
-                onPressed: _seedFirestore,
-                icon: const Icon(Icons.cloud_upload, size: 16),
-                label: const Text('Seed'),
+                onPressed: _isSeeding ? null : _seedFirestore,
+                icon: _isSeeding
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Icon(Icons.cloud_upload, size: 16),
+                label: Text(_isSeeding ? 'Seeding...' : 'Seed'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.teal.shade700,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+            ),
+          if (kDebugMode && _friendlyError == null && !_isLoading)
+            Positioned(
+              bottom: selectedAttraction == null ? 70 : 210,
+              right: 16,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Data source: $_dataSourceLabel',
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ),
             ),
@@ -306,37 +336,82 @@ class _HomePageState extends State<HomePage> {
                               color: Colors.teal.shade50,
                               borderRadius: BorderRadius.circular(16),
                             ),
-                            child: Text(selectedAttraction!.iconEmoji, style: TextStyle(fontSize: 28)),
+                            child: Text(selectedAttraction!.iconEmoji,
+                                style: TextStyle(fontSize: 28)),
                           ),
                           SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               selectedAttraction!.name,
-                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.teal.shade800),
+                              style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.teal.shade800),
                             ),
                           ),
                           IconButton(
                             icon: Icon(Icons.close, color: Colors.grey),
-                            onPressed: () => setState(() => selectedAttraction = null),
+                            onPressed: () =>
+                                setState(() => selectedAttraction = null),
                           ),
                         ],
                       ),
                       SizedBox(height: 12),
-                      Text(selectedAttraction!.description, style: TextStyle(fontSize: 14)),
+                      Text(selectedAttraction!.description,
+                          style: TextStyle(fontSize: 14)),
                       SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Icon(Icons.location_on_outlined,
+                              size: 16, color: Colors.grey),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '${selectedAttraction!.city}, ${selectedAttraction!.state}',
+                              style: TextStyle(color: Colors.teal.shade700),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.attach_money,
+                              size: 16, color: Colors.grey),
+                          SizedBox(width: 6),
+                          Text(
+                            selectedAttraction!.priceRange.isEmpty
+                                ? 'N/A'
+                                : selectedAttraction!.priceRange,
+                            style: TextStyle(color: Colors.teal.shade700),
+                          ),
+                          Spacer(),
+                          Icon(Icons.star, size: 16, color: Colors.amber),
+                          SizedBox(width: 4),
+                          Text(
+                            selectedAttraction!.rating.toStringAsFixed(1),
+                            style: TextStyle(color: Colors.teal.shade700),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
                       Row(
                         children: [
                           Icon(Icons.category, size: 16, color: Colors.grey),
                           SizedBox(width: 6),
-                          Text(selectedAttraction!.category, style: TextStyle(color: Colors.teal.shade700)),
+                          Text(selectedAttraction!.category,
+                              style: TextStyle(color: Colors.teal.shade700)),
                           Spacer(),
                           TextButton(
                             onPressed: () {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("More info about ${selectedAttraction!.name} coming soon!")),
+                                SnackBar(
+                                    content: Text(
+                                        "More info about ${selectedAttraction!.name} coming soon!")),
                               );
                             },
-                            child: Text("Learn More", style: TextStyle(color: Colors.teal)),
+                            child: Text("Learn More",
+                                style: TextStyle(color: Colors.teal)),
                           ),
                         ],
                       ),
@@ -353,7 +428,9 @@ class _HomePageState extends State<HomePage> {
               right: 16,
               child: Container(
                 padding: EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(30)),
+                decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(30)),
                 child: Text(
                   "Tap on any marker to see details",
                   textAlign: TextAlign.center,
@@ -374,7 +451,9 @@ class _HomePageState extends State<HomePage> {
         label: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: isSelected ? Colors.white : Colors.teal.shade700),
+            Icon(icon,
+                size: 18,
+                color: isSelected ? Colors.white : Colors.teal.shade700),
             SizedBox(width: 6),
             Text(category),
           ],
@@ -383,10 +462,177 @@ class _HomePageState extends State<HomePage> {
         onSelected: (_) => _onCategorySelected(category),
         backgroundColor: Colors.white,
         selectedColor: Colors.teal.shade600,
-        labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.teal.shade800),
+        labelStyle:
+            TextStyle(color: isSelected ? Colors.white : Colors.teal.shade800),
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         shape: StadiumBorder(),
       ),
     );
   }
+
+  Widget _buildMapMarker(
+    Attraction attraction, {
+    required bool isSelected,
+  }) {
+    final markerStyle = _markerStyleFor(attraction);
+    final imageUrl = attraction.imageUrl.trim();
+    final size = isSelected ? 58.0 : 48.0;
+    final contentSize = isSelected ? 46.0 : 38.0;
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.9, end: isSelected ? 1.08 : 1),
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      builder: (context, scale, child) {
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: RepaintBoundary(
+        child: Container(
+          width: size,
+          height: size,
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white,
+            border: Border.all(
+              color: isSelected ? Colors.teal.shade700 : Colors.white,
+              width: isSelected ? 3 : 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: isSelected ? 0.28 : 0.18,
+                ),
+                blurRadius: isSelected ? 12 : 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipOval(
+            child: imageUrl.isNotEmpty
+                ? Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    width: contentSize,
+                    height: contentSize,
+                    cacheWidth: 96,
+                    cacheHeight: 96,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return _buildCategoryMarkerIcon(markerStyle);
+                    },
+                    errorBuilder: (_, __, ___) {
+                      return _buildCategoryMarkerIcon(markerStyle);
+                    },
+                  )
+                : _buildCategoryMarkerIcon(markerStyle),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryMarkerIcon(_MarkerStyle markerStyle) {
+    return Container(
+      color: markerStyle.backgroundColor,
+      alignment: Alignment.center,
+      child: Icon(
+        markerStyle.icon,
+        color: markerStyle.iconColor,
+        size: 24,
+      ),
+    );
+  }
+
+  _MarkerStyle _markerStyleFor(Attraction attraction) {
+    final category = attraction.category.toLowerCase();
+    final nameIndex = attraction.name.hashCode.abs();
+
+    if (category == 'food') {
+      return _foodMarkerStyles[nameIndex % _foodMarkerStyles.length];
+    }
+
+    if (category == 'nature') {
+      return _natureMarkerStyles[nameIndex % _natureMarkerStyles.length];
+    }
+
+    if (category == 'historical') {
+      return _historicalMarkerStyles[
+          nameIndex % _historicalMarkerStyles.length];
+    }
+
+    return _defaultMarkerStyle;
+  }
 }
+
+class _MarkerStyle {
+  final IconData icon;
+  final Color backgroundColor;
+  final Color iconColor;
+
+  const _MarkerStyle({
+    required this.icon,
+    required this.backgroundColor,
+    required this.iconColor,
+  });
+}
+
+final List<_MarkerStyle> _foodMarkerStyles = [
+  _MarkerStyle(
+    icon: Icons.restaurant,
+    backgroundColor: Colors.orange.shade50,
+    iconColor: Colors.deepOrange.shade600,
+  ),
+  _MarkerStyle(
+    icon: Icons.fastfood,
+    backgroundColor: Colors.amber.shade50,
+    iconColor: Colors.orange.shade800,
+  ),
+  _MarkerStyle(
+    icon: Icons.local_cafe,
+    backgroundColor: Colors.brown.shade50,
+    iconColor: Colors.brown.shade600,
+  ),
+];
+
+final List<_MarkerStyle> _natureMarkerStyles = [
+  _MarkerStyle(
+    icon: Icons.forest,
+    backgroundColor: Colors.green.shade50,
+    iconColor: Colors.green.shade700,
+  ),
+  _MarkerStyle(
+    icon: Icons.terrain,
+    backgroundColor: Colors.teal.shade50,
+    iconColor: Colors.teal.shade700,
+  ),
+  _MarkerStyle(
+    icon: Icons.park,
+    backgroundColor: Colors.lightGreen.shade50,
+    iconColor: Colors.lightGreen.shade700,
+  ),
+];
+
+final List<_MarkerStyle> _historicalMarkerStyles = [
+  _MarkerStyle(
+    icon: Icons.account_balance,
+    backgroundColor: Colors.blueGrey.shade50,
+    iconColor: Colors.blueGrey.shade700,
+  ),
+  _MarkerStyle(
+    icon: Icons.location_city,
+    backgroundColor: Colors.teal.shade50,
+    iconColor: Colors.teal.shade800,
+  ),
+  _MarkerStyle(
+    icon: Icons.history_edu,
+    backgroundColor: Colors.indigo.shade50,
+    iconColor: Colors.indigo.shade500,
+  ),
+];
+
+final _MarkerStyle _defaultMarkerStyle = _MarkerStyle(
+  icon: Icons.place,
+  backgroundColor: Colors.teal.shade50,
+  iconColor: Colors.teal.shade700,
+);
