@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/attraction.dart';
-import '../data/attractions_data.dart';
+import '../services/firebase_place_service.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -11,15 +12,20 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final TextEditingController searchController = TextEditingController();
+  final FirebasePlaceService _placeService = FirebasePlaceService();
   String selectedCategory = "All";
   Attraction? selectedAttraction;
+  List<Attraction> _allAttractions = [];
   List<Attraction> filteredAttractions = [];
+  bool _isLoading = true;
+  String? _friendlyError;
+  String? _fallbackMessage;
 
   @override
   void initState() {
     super.initState();
-    filteredAttractions = List.from(allAttractions);
     searchController.addListener(_filterAttractions);
+    _loadAttractions();
   }
 
   @override
@@ -28,10 +34,38 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  Future<void> _loadAttractions() async {
+    setState(() {
+      _isLoading = true;
+      _friendlyError = null;
+      _fallbackMessage = null;
+    });
+
+    try {
+      final result = await _placeService.getPlacesWithFallback();
+      setState(() {
+        _allAttractions = result.attractions;
+        _fallbackMessage = result.fromFallback ? result.error : null;
+        _isLoading = false;
+      });
+      _filterAttractions();
+    } catch (e) {
+      setState(() {
+        _allAttractions = [];
+        filteredAttractions = [];
+        selectedAttraction = null;
+        _isLoading = false;
+        _friendlyError =
+            "We couldn't load places from Firebase or local backup. Please try again.";
+      });
+      debugPrint('Place loading failed: $e');
+    }
+  }
+
   void _filterAttractions() {
     setState(() {
       String query = searchController.text.toLowerCase();
-      filteredAttractions = allAttractions.where((attraction) {
+      filteredAttractions = _allAttractions.where((attraction) {
         bool matchesSearch = attraction.name.toLowerCase().contains(query);
         bool matchesCategory =
             selectedCategory == "All" || attraction.category == selectedCategory;
@@ -48,14 +82,30 @@ class _HomePageState extends State<HomePage> {
   void _onCategorySelected(String category) {
     setState(() {
       selectedCategory = category;
-      _filterAttractions();
     });
+    _filterAttractions();
   }
 
   void _onMarkerTap(Attraction attraction) {
     setState(() {
       selectedAttraction = attraction;
     });
+  }
+
+  Future<void> _seedFirestore() async {
+    try {
+      await _placeService.seedSamplePlaces();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sample places seeded to Firestore.')),
+      );
+      await _loadAttractions();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Seed failed: $e')),
+      );
+    }
   }
 
   @override
@@ -114,6 +164,8 @@ class _HomePageState extends State<HomePage> {
               ),
             ],
           ),
+          if (_isLoading)
+            const Center(child: CircularProgressIndicator()),
           // 搜索栏
           Positioned(
             top: 50,
@@ -163,6 +215,69 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
+          if (_fallbackMessage != null)
+            Positioned(
+              top: 160,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _fallbackMessage!,
+                  style: TextStyle(color: Colors.amber.shade900, fontSize: 12),
+                ),
+              ),
+            ),
+          if (_friendlyError != null)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black45,
+                alignment: Alignment.center,
+                child: Container(
+                  margin: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.redAccent),
+                      const SizedBox(height: 8),
+                      Text(
+                        _friendlyError!,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      ElevatedButton(
+                        onPressed: _loadAttractions,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (kDebugMode)
+            Positioned(
+              top: 200,
+              right: 16,
+              child: ElevatedButton.icon(
+                onPressed: _seedFirestore,
+                icon: const Icon(Icons.cloud_upload, size: 16),
+                label: const Text('Seed'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+            ),
           // 详情卡片
           if (selectedAttraction != null)
             Positioned(
